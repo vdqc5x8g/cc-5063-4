@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>曲面拼接工作台 · Surface Stitch Studio</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <h1>曲面拼接工作台</h1>
+          <p class="subtitle">参数曲面接边 · 位置 / 切平面 / 参数连续 · 解析误差反馈</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <span class="badge" id="engine-badge">解析 B 样条内核</span>
+        <button id="btn-help" class="ghost" type="button">使用说明</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="panel panel-left" aria-label="拼接设置">
+        <section class="group">
+          <h2>1. 选择测试场景</h2>
+          <label class="field">
+            <span>场景</span>
+            <select id="scene-select"></select>
+          </label>
+          <p class="hint" id="scene-note"></p>
+        </section>
+
+        <section class="group">
+          <h2>2. 对应边界</h2>
+          <div class="boundary-row">
+            <label class="field">
+              <span>A 侧接边</span>
+              <select id="side-a"></select>
+            </label>
+            <label class="field">
+              <span>B 侧接边</span>
+              <select id="side-b"></select>
+            </label>
+          </div>
+          <p class="hint">在视窗中点击曲面靠近某条边界，可直接选中该接边。</p>
+          <label class="field">
+            <span>边界方向</span>
+            <select id="direction">
+              <option value="1">同向（A→B 一致）</option>
+              <option value="-1">反向（B 边界走向相反）</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>对应方式</span>
+            <select id="corr-mode">
+              <option value="arclength">弧长对应（按几何长度）</option>
+              <option value="parameter">参数对应（按参数值）</option>
+            </select>
+          </label>
+          <div class="boundary-row">
+            <button id="flip-a" class="ghost small" type="button">翻转 A 法向</button>
+            <button id="flip-b" class="ghost small" type="button">翻转 B 法向</button>
+          </div>
+        </section>
+
+        <section class="group">
+          <h2>3. 接边条件</h2>
+          <div class="seg" id="continuity-seg" role="group" aria-label="连续性条件">
+            <button data-mode="G0" type="button">G0 位置</button>
+            <button data-mode="G1" type="button">G1 切平面</button>
+            <button data-mode="C1" type="button">C1 参数</button>
+          </div>
+          <p class="hint" id="continuity-hint"></p>
+
+          <label class="field">
+            <span>固定侧（不可移动）</span>
+            <select id="fixed-side">
+              <option value="A">固定 A（移动 B）</option>
+              <option value="B">固定 B（移动 A）</option>
+            </select>
+          </label>
+          <label class="field range">
+            <span>可变形控制行数 <output id="deform-out">3</output></span>
+            <input id="deform-rows" type="range" min="1" max="8" step="1" value="3" />
+          </label>
+          <label class="field range">
+            <span>内部形态保持刚度 <output id="stiffness-out">0.010</output></span>
+            <input id="stiffness" type="range" min="0" max="100" step="1" value="55" />
+          </label>
+          <label class="field range">
+            <span>近缝优先权重 <output id="bias-out">0.0</output></span>
+            <input id="shape-bias" type="range" min="0" max="100" step="1" value="0" />
+          </label>
+          <label class="field range">
+            <span>约束采样数 <output id="samples-out">48</output></span>
+            <input id="samples" type="range" min="8" max="120" step="4" value="48" />
+          </label>
+        </section>
+
+        <section class="group">
+          <h2>4. 视窗显示</h2>
+          <label class="toggle"><input id="show-reflect" type="checkbox" checked /><span>反射线条纹</span></label>
+          <label class="toggle"><input id="show-gap" type="checkbox" checked /><span>接缝间隙梳</span></label>
+          <label class="toggle"><input id="show-net" type="checkbox" /><span>控制网</span></label>
+        </section>
+
+        <section class="group actions">
+          <button id="btn-solve" class="primary" type="button">求解拼接</button>
+          <div class="boundary-row">
+            <button id="btn-focus" class="ghost" type="button">聚焦接缝</button>
+            <button id="btn-reset" class="ghost" type="button">重置几何</button>
+          </div>
+        </section>
+      </aside>
+
+      <section class="stage">
+        <div id="viewport" class="viewport" aria-label="三维曲面视窗"></div>
+        <div class="viewport-overlay">
+          <div class="legend">
+            <span><i class="swatch swatch-a"></i>曲面 A</span>
+            <span><i class="swatch swatch-b"></i>曲面 B</span>
+            <span><i class="swatch swatch-seam"></i>接缝</span>
+            <span><i class="swatch swatch-comb"></i>间隙梳</span>
+          </div>
+          <div class="camera-help">左键旋转 · 滚轮缩放 · 右键平移 · 点击曲面选边界</div>
+        </div>
+      </section>
+
+      <aside class="panel panel-right" aria-label="结果与误差">
+        <section class="group">
+          <h2>连接结果</h2>
+          <div id="status-banner" class="status-banner info">
+            <strong id="status-title">待求解</strong>
+            <p id="status-detail"></p>
+          </div>
+          <ul class="stat-list" id="solve-stats"></ul>
+        </section>
+
+        <section class="group">
+          <h2>接缝连续误差 <span class="subtle">（解析验算）</span></h2>
+          <div class="metric-grid" id="metric-grid"></div>
+          <p class="hint" id="metric-explainer"></p>
+        </section>
+
+        <section class="group">
+          <h2>误差分布</h2>
+          <canvas id="error-chart" width="520" height="180"></canvas>
+          <p class="hint">横轴为沿接缝的归一化位置，纵轴为位置间隙；红点标出最大间隙处。</p>
+        </section>
+
+        <section class="group">
+          <h2>导出真实曲面</h2>
+          <div class="export-row">
+            <label class="field">
+              <span>网格分辨率</span>
+              <select id="export-res">
+                <option value="32">32 × 32</option>
+                <option value="64" selected>64 × 64</option>
+                <option value="96">96 × 96</option>
+                <option value="128">128 × 128</option>
+              </select>
+            </label>
+          </div>
+          <div class="export-grid">
+            <button id="export-json" class="ghost" type="button">JSON 解析曲面</button>
+            <button id="export-obj" class="ghost" type="button">OBJ 曲面 + 接缝</button>
+            <button id="export-csv" class="ghost" type="button">CSV 接缝误差</button>
+            <button id="export-txt" class="ghost" type="button">TXT 报告</button>
+            <button id="export-png" class="ghost" type="button">PNG 视窗截图</button>
+          </div>
+          <p class="hint">导出保留两片独立解析曲面及其节点向量；接缝线仅作显示，不代表已焊合。</p>
+        </section>
+      </aside>
+    </main>
+
+    <dialog id="help-dialog">
+      <form method="dialog" class="dialog-body">
+        <h2>使用说明</h2>
+        <ol>
+          <li>在左栏选择测试场景，或在视窗中点击曲面以选择接边。</li>
+          <li>确认两片接边与“同向 / 反向”。工具默认按边界端点的几何距离自动判定方向。</li>
+          <li>选择连续性：G0 只闭合位置，G1 对齐切平面，C1 进一步要求参数导数相等。</li>
+          <li>指定固定侧：该片完全不动，只有另一片的接缝附近控制行会被调整。</li>
+          <li>点击“求解拼接”。若无法同时满足位置与切向条件，右栏显示“约束冲突”及原因。</li>
+          <li>打开“反射线检查”，观察接缝两侧反射条纹是否连续；若断裂，说明切平面不连续。</li>
+          <li>在“接缝连续误差”中核对位置间隙、法线夹角与速度比；这些数值由解析曲面直接验算。</li>
+        </ol>
+        <p class="hint">
+          提示：G1 只要求切平面一致，两侧参数速度可以不同；因此速度比可能远离 1。C1 会强制速度一致，
+          在参数速度本不相同时通常需要更大的控制点调整。
+        </p>
+        <menu><button class="primary" value="close">关闭</button></menu>
+      </form>
+    </dialog>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
