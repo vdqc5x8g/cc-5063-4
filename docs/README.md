@@ -36,6 +36,27 @@ npm run dev          # 打开 http://localhost:5173/
 7. 在「接缝连续误差」区核对位置间隙、切平面偏差、法线夹角、参数速度比、C1 失配。
 8. 在「导出真实曲面」区导出 JSON / OBJ / CSV / TXT / PNG。
 
+### 冲突定位与锁定边让步预演（连续性模型取舍）
+
+启动后默认进入 `locklab` 场景并自动完成一次求解、一次 G1/C1 路线对比和 `side1` 预演：
+
+1. 左栏「4. 边界锁与连续性取舍」勾选 / 取消 `opposite / side0 / side1`，设定让步预算，
+   点击 **「实测 G1 / C1 路线对比」**。运行中按钮禁用并显示“计算中”，完成后给出耗时。
+2. 右栏「连续性模型实测对比」给出**据实测的推荐（G1 或 C1）与原因**、两路线的
+   变量 / 约束秩 / 零空间 / 最大位移，以及冲突段列表：红=连接受阻、橙=不可兼得、黄=代价过高。
+   **点击任一冲突行，三维视窗会用球标 + 定位环标出并把相机聚焦到该 ξ 位置。**
+3. 右栏「锁定边 · 松开预演与副本复检」点选一根边：已锁定边会真实执行两次求解
+   （保持锁定 vs 仅松开该边），显示最大让步控制点位移、该边是否参与约束、间隙/角度/C1
+   的“锁→松”、超差占比，以及被 **消除 / 缓解 / 显著压低** 的 ξ 区间。
+   视窗中洋红管道+极点是锁定边，洋红箭头是让步位移（可勾选“视觉放大 ×8”，面板读数仍为真实位移），
+   绿 / 橙 / 蓝管道分别是消除 / 缓解 / 显著压低段。
+4. 点 **「在副本上应用松开并重新量测」**：视窗与指标立即换成松开后的真实求解结果，
+   顶部出现试验条；可选 **「保留并设为新基准」** 或 **「还原副本」**。
+
+> 这套界面动作全部接到 `src/core/route-lab.ts` 的真实两次求解与解析复检，不是预制动画。
+> 量化结论与复算方式见 [`surface-seam-experiments.md`](./surface-seam-experiments.md)，
+> 尚待一般化验证的假设见 [`continuity-model-assumptions.md`](./continuity-model-assumptions.md)。
+
 ---
 
 ## 连续性条件与两种做法
@@ -108,6 +129,7 @@ npm run dev          # 打开 http://localhost:5173/
 | `density` | 两片节点密度不同 → 弧长 vs 参数对应差异 |
 | `curved` | 弯曲（空间曲线）接边 |
 | `conflict` | 变形行数不足 / 固定侧受限 → 约束冲突 |
+| `locklab` | 端边被邻面顶偏并锁定 → 冲突定位 + 松边消除段/让步预演（默认启动场景） |
 
 ---
 
@@ -127,20 +149,39 @@ npm run dev          # 打开 http://localhost:5173/
 
 ```bash
 npm run cli -- --list
+npm run cli -- --all                     # 七场景 × G0/G1/C1 端到端矩阵
+npm run cli -- --scene locklab --continuity G1
 npm run cli -- --scene tilt --continuity G1 --fixed A --rows 3
 npm run cli -- --scene speed --continuity C1 --correspondence parameter --json
 npm run cli -- --scene tilt --out ./out      # 写出 JSON/OBJ/CSV/TXT
 ```
 
-退出码：`0` 成功，`2` 约束冲突，`3` 数值退化。命令行输出与界面一致，均由同一解析内核计算。
+`--all` 只要 21 个组合都跑出报告即视为旧样例运行到底（设计内的 conflict 也是正常报告，
+只有抛异常才返回非零）。单场景退出码：`0` 成功，`2` 约束冲突，`3` 数值退化；
+命令行输出与界面一致，均由同一解析内核计算。
+
+---
+
+## 实验证据复算（不允许伪报）
+
+```bash
+npm run experiments        # 重新求解全部实验，写 experiments/evidence.json 并刷新结论文档表格
+npm run experiments:check  # 校验 evidence.json 与文档生成块是否为最新（过期即退出 1）
+```
+
+`docs/surface-seam-experiments.md` 中的表格由 `src/experiments/run.ts` 真实求解 +
+解析量测生成，并用标记块 `<!-- EXP:<id>:BEGIN/END -->` 回写；vitest 会逐字节校验
+证据 JSON 与文档块新鲜度，因此数字无法手工捏造。
 
 ---
 
 ## 开发与测试
 
 ```bash
-npm test        # vitest：基底/导数、G1 vs C1、方向反转、冲突、固定侧、变形范围
+npm test        # vitest：核心 15 项 + 路线实验室 + 证据/文档新鲜度（共 24 项）
+npm run experiments:check
 npm run build   # tsc --noEmit && vite build
+npm run dev     # 图形界面 http://localhost:5173/ （默认 locklab）
 ```
 
 核心结构：
@@ -148,9 +189,14 @@ npm run build   # tsc --noEmit && vite build
 - `src/core/bspline.ts` — B 样条基底与导数（The NURBS Book A2.2/A2.3）。
 - `src/core/surface.ts` — 张量积曲面求值、法线、朝向。
 - `src/core/seam.ts` — 边界框架、对应（弧长/参数、方向）、求导系数。
-- `src/core/solver.ts` — 加权最小二乘约束求解 + 解析后验验算 + 冲突判定。
+- `src/core/solver.ts` — 加权最小二乘约束求解 + 边界锁 + DOF 秩/零空间 + 冲突判定。
 - `src/core/continuity.ts` — 解析接缝误差量测。
+- `src/core/route-lab.ts` — G1/C1 双路线对比、不可兼得聚类、锁边松开反事实预演。
+- `src/core/prototypes.ts` — 速度比/速度鼓包/异次实验原型。
+- `src/core/shape-cost.ts` — 控制点位移、曲面偏差、二阶形变能。
 - `src/core/exporters.ts` — JSON/OBJ/CSV/TXT 导出。
-- `src/ui/` — 视窗（Three.js，反射线条纹着色器）、状态、面板。
-- `src/cli.ts` — 辅助命令行。
-- `src/tests/core.test.ts` — 核验套件。
+- `src/experiments/run.ts`、`src/experiments/markdown.ts` — 证据引擎与文档表格渲染。
+- `scripts/experiments.ts` — 证据/文档生成与 `--check` 新鲜度门禁。
+- `src/ui/` — 视窗（Three.js，反射条纹 + 冲突/让步标注）、状态 store、面板。
+- `src/cli.ts` — 辅助命令行（含 `--all` 矩阵）。
+- `src/tests/` — 核心套件、路线实验室测试、实验证据新鲜度测试。

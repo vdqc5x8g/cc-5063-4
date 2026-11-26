@@ -11,7 +11,7 @@ const $ = <T extends HTMLElement>(id: string): T => {
   return el as T;
 };
 
-const store = new AppStore('tilt');
+const store = new AppStore('locklab');
 const viewportContainer = $<HTMLDivElement>('viewport');
 const viewport = new Viewport(viewportContainer, store, (which, side) => {
   if (which === 'A' && store.state.sideA !== side) {
@@ -70,6 +70,25 @@ const metricGrid = $<HTMLDivElement>('metric-grid');
 const metricExplainer = $<HTMLParagraphElement>('metric-explainer');
 const errorChart = $<HTMLCanvasElement>('error-chart');
 const exportRes = $<HTMLSelectElement>('export-res');
+const lockInputs: Record<'opposite' | 'side0' | 'side1', HTMLInputElement> = {
+  opposite: $<HTMLInputElement>('lock-opposite'),
+  side0: $<HTMLInputElement>('lock-side0'),
+  side1: $<HTMLInputElement>('lock-side1'),
+};
+const budgetInput = $<HTMLInputElement>('move-budget');
+const budgetOut = $<HTMLOutputElement>('budget-out');
+const compareBtn = $<HTMLButtonElement>('btn-compare');
+const labBusy = $<HTMLParagraphElement>('lab-busy');
+const solveState = $<HTMLSpanElement>('solve-state');
+const recBox = $<HTMLDivElement>('rec-box');
+const dofList = $<HTMLDivElement>('dof-list');
+const clusterList = $<HTMLUListElement>('cluster-list');
+const anomalyList = $<HTMLUListElement>('anomaly-list');
+const edgeList = $<HTMLDivElement>('edge-list');
+const edgePreviewText = $<HTMLDivElement>('edge-preview-text');
+const edgeTrialBtn = $<HTMLButtonElement>('btn-edge-trial');
+const trialBar = $<HTMLDivElement>('trial-bar');
+const trialText = $<HTMLSpanElement>('trial-text');
 
 /** Map the 0..100 stiffness slider to a log scale. */
 const sliderToStiffness = (v: number) => Math.pow(10, -4 + (v / 100) * 3); // 1e-4 .. 1e-1
@@ -93,6 +112,12 @@ function syncSelects(st: AppState) {
   for (const btn of document.querySelectorAll<HTMLButtonElement>('#continuity-seg button')) {
     btn.classList.toggle('active', btn.dataset.mode === st.continuity);
   }
+  (Object.keys(lockInputs) as Array<keyof typeof lockInputs>).forEach((edge) => {
+    lockInputs[edge].checked = st.edgeLocks[edge];
+  });
+  const budgetPct = Math.round(st.moveBudgetFrac * 100);
+  budgetInput.value = String(budgetPct);
+  budgetOut.textContent = `${budgetPct}%`;
   sceneNote.textContent = `${st.scene.description}  ${st.scene.note}`;
 }
 
@@ -114,8 +139,28 @@ function render(state: AppState) {
     degenerate: '求解退化',
     info: '待求解',
   };
-  statusTitle.textContent = state.result ? titles[state.statusKind] ?? '结果' : '待求解';
+  statusTitle.textContent = state.trial
+    ? '副本已应用 · 待保留/还原'
+    : state.result
+      ? (titles[state.statusKind] ?? '结果')
+      : state.statusKind === 'info'
+        ? '待求解'
+        : titles[state.statusKind];
   statusDetail.textContent = state.statusText;
+
+  solveState.className = `run-state${state.solving ? ' busy' : ''}`;
+  solveState.textContent = state.solving
+    ? '● 求解中…'
+    : state.lastSolveMs !== null
+      ? `就绪 · 上次求解 ${state.lastSolveMs.toFixed(0)} ms`
+      : '就绪';
+  compareBtn.disabled = state.comparisonBusy;
+  $('btn-solve').toggleAttribute('disabled', state.solving);
+  labBusy.textContent = state.comparisonBusy
+    ? '路线对比计算中：各跑一次 G1 与 C1 求解并解析复检…'
+    : state.labRunMs !== null
+      ? `路线对比完成 · 耗时 ${state.labRunMs.toFixed(0)} ms（阈值随模型尺度缩放）`
+      : '';
 
   // Solve stats
   statsList.innerHTML = '';
@@ -139,9 +184,186 @@ function render(state: AppState) {
 
   // Metrics
   renderMetrics(state);
+  renderAnomalies(state);
+  renderComparison(state);
+  renderEdgeLab(state);
+  renderTrialBar(state);
 
   // Chart
   drawChart(state);
+}
+
+const levelLabel: Record<string, string> = {
+  blocked: '连接受阻',
+  exclusive: '不可兼得',
+  costly: '代价过高',
+};
+
+function renderAnomalies(state: AppState) {
+  anomalyList.innerHTML = '';
+  if (!state.metrics) {
+    const li = document.createElement('li');
+    li.className = 'hint';
+    li.textContent = '尚无接缝数据。';
+    anomalyList.appendChild(li);
+    return;
+  }
+  if (!state.anomalies.length) {
+    const li = document.createElement('li');
+    li.className = 'cluster-item good';
+    li.textContent = '当前接缝在阈值内未标出连接/连续异常。';
+    anomalyList.appendChild(li);
+    return;
+  }
+  for (const c of state.anomalies) {
+    const li = document.createElement('li');
+    li.className = `cluster-item ${c.level}`;
+    li.dataset.anomalyId = String(c.id);
+    li.innerHTML = `
+      <div class="cluster-head"><span class="cluster-badge ${c.level}">${levelLabel[c.level] ?? c.level}</span>
+      <span class="cluster-range">ξ ${c.xi0.toFixed(2)}–${c.xi1.toFixed(2)} · ${c.count} 点</span></div>
+      <div class="cluster-meta">间隙 ${fmtSci(c.maxGap)} · 切平面 ${c.maxTangentPlaneDeg.toFixed(2)}°${
+        state.continuity === 'C1' ? ` · C1 ${fmtSci(c.maxC1Mismatch)}` : ''
+      }</div>
+      <div class="cluster-locate">点击三维定位 →</div>`;
+    anomalyList.appendChild(li);
+  }
+}
+
+function renderComparison(state: AppState) {
+  const cmp = state.comparison;
+  if (!cmp) {
+    recBox.className = 'rec-box info';
+    recBox.textContent = state.comparisonBusy ? '正在实测两条路线…' : '尚未运行路线对比。';
+    dofList.innerHTML = '';
+    clusterList.innerHTML = '';
+    const li = document.createElement('li');
+    li.className = 'hint';
+    li.textContent = '点击左栏“实测 G1 / C1 路线对比”，将据两次真实求解自动标出不可兼得位置。';
+    clusterList.appendChild(li);
+    return;
+  }
+  recBox.className = `rec-box rec-${cmp.recommendation.toLowerCase()}`;
+  recBox.innerHTML = `<strong>实测推荐：优先 ${cmp.recommendation}</strong>
+    <ul class="rec-reasons">${cmp.recommendationReasons.map((r) => `<li>${r}</li>`).join('')}</ul>`;
+
+  const rows: Array<[string, string]> = [
+    [
+      'G1',
+      `变量 ${cmp.g1.dof.variables} · 约束秩 ${cmp.g1.dof.constraintRank} · 零空间 ${cmp.g1.dof.nullity} · 最大位移 ${fmtSci(cmp.g1.move.max)} · 切平面 ${cmp.g1.metrics.maxTangentPlaneDeg.toExponential(1)}°`,
+    ],
+    [
+      'C1',
+      `变量 ${cmp.c1.dof.variables} · 约束秩 ${cmp.c1.dof.constraintRank} · 零空间 ${cmp.c1.dof.nullity} · 最大位移 ${fmtSci(cmp.c1.move.max)} · C1 失配 ${cmp.c1.metrics.maxC1Mismatch.toExponential(1)}`,
+    ],
+    ['让步预算', `最大控制点位移 ≤ ${cmp.thresholds.moveBudget.toFixed(4)}（${Math.round(state.moveBudgetFrac * 100)}% 模型尺度）`],
+  ];
+  dofList.innerHTML = '';
+  for (const [k, v] of rows) {
+    const div = document.createElement('div');
+    div.className = 'dof-row';
+    div.innerHTML = `<span class="dof-mode">${k}</span><span class="dof-val">${v}</span>`;
+    dofList.appendChild(div);
+  }
+
+  clusterList.innerHTML = '';
+  if (!cmp.g1.clusters.length) {
+    const li = document.createElement('li');
+    li.className = 'cluster-item good';
+    li.textContent = '两条路线在当前阈值与预算内没有冲突段：C1 可达且代价在预算内（故推荐 C1）。';
+    clusterList.appendChild(li);
+    return;
+  }
+  for (const c of cmp.g1.clusters) {
+    const li = document.createElement('li');
+    li.className = `cluster-item ${c.level}${state.selectedClusterId === c.id ? ' selected' : ''}`;
+    li.dataset.clusterId = String(c.id);
+    li.innerHTML = `
+      <div class="cluster-head"><span class="cluster-badge ${c.level}">${levelLabel[c.level] ?? c.level}</span>
+      <span class="cluster-range">#${c.id} ξ ${c.xi0.toFixed(2)}–${c.xi1.toFixed(2)} · ${c.count} 点</span></div>
+      <div class="cluster-meta">间隙 ${fmtSci(c.maxGap)} · 切平面 ${c.maxTangentPlaneDeg.toFixed(2)}° · C1 ${fmtSci(c.maxC1Mismatch)} · C1 局部位移 ${fmtSci(c.maxLocalMoveC1)}</div>
+      <div class="cluster-locate">点击在三维视窗定位 →</div>`;
+    clusterList.appendChild(li);
+  }
+}
+
+const EDGE_NAMES: Record<'opposite' | 'side0' | 'side1', string> = {
+  opposite: '对侧边 opposite（远排）',
+  side0: '起点侧边 side0',
+  side1: '终点侧边 side1',
+};
+
+function renderEdgeLab(state: AppState) {
+  edgeList.innerHTML = '';
+  (['opposite', 'side0', 'side1'] as const).forEach((edge) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = `edge-row${state.selectedLockEdge === edge ? ' selected' : ''}${state.edgeLocks[edge] ? ' locked' : ''}`;
+    row.dataset.edge = edge;
+    const lockTag = state.edgeLocks[edge] ? '🔒 已锁定' : '未锁定';
+    row.innerHTML = `<span class="edge-name">${EDGE_NAMES[edge]}</span><span class="edge-lock-tag">${lockTag}</span>`;
+    edgeList.appendChild(row);
+  });
+
+  const edge = state.selectedLockEdge;
+  const pv = state.edgePreview;
+  if (!edge) {
+    edgePreviewText.innerHTML =
+      '<p class="hint">选择一根边：已锁定的边会直接做“锁定 vs 仅松开”两次求解预演；未锁定的边会先为你勾选锁定。</p>';
+    edgeTrialBtn.hidden = true;
+    return;
+  }
+  if (!state.edgeLocks[edge]) {
+    edgePreviewText.innerHTML = `<p class="hint">${EDGE_NAMES[edge]} 当前未锁定。点击上方边条即可锁定并预演“松开它”的效果。</p>`;
+    edgeTrialBtn.hidden = true;
+    return;
+  }
+  if (state.previewBusy || !pv) {
+    edgePreviewText.innerHTML = `<p class="hint busy-line">正在对 ${EDGE_NAMES[edge]} 做两次求解与解析复检…</p>`;
+    edgeTrialBtn.hidden = true;
+    return;
+  }
+
+  const rangeLine = (label: string, ranges: typeof pv.healed, cls: string) =>
+    ranges.length
+      ? `<div class="heal-line ${cls}"><b>${label} ${ranges.length} 段：</b>` +
+        ranges
+          .map(
+            (r) =>
+              `ξ ${r.xi0.toFixed(2)}–${r.xi1.toFixed(2)}（角 ${r.tanBeforeMax.toFixed(2)}°→${r.tanAfterMax.toExponential(1)}°，缓解 ${(r.relief * 100).toFixed(0)}%）`,
+          )
+          .join('；') +
+        '</div>'
+      : '';
+
+  edgePreviewText.innerHTML = `
+    <div class="pv-grid">
+      <div><span>最大让步位移</span><b>${fmtSci(pv.maxConcession)}</b></div>
+      <div><span>该边是否参与约束</span><b>${pv.edgeParticipates ? '是' : '否（位移≈0，松开无可测影响）'}</b></div>
+      <div><span>最大间隙 锁→松</span><b>${fmtSci(pv.before.maxGap)} → ${fmtSci(pv.after.maxGap)}</b></div>
+      <div><span>切平面° 锁→松</span><b>${pv.before.maxTangentPlaneDeg.toFixed(3)} → ${pv.after.maxTangentPlaneDeg.toExponential(2)}</b></div>
+      <div><span>C1 失配 锁→松</span><b>${fmtSci(pv.before.maxC1Mismatch)} → ${fmtSci(pv.after.maxC1Mismatch)}</b></div>
+      <div><span>锁解超差占比 / 被消除占超差</span><b>${(pv.badFractionBefore * 100).toFixed(0)}% / ${(pv.healedFraction * 100).toFixed(0)}%</b></div>
+    </div>
+    ${rangeLine('消除', pv.healed, 'healed')}
+    ${rangeLine('缓解', pv.relieved, 'relieved')}
+    ${rangeLine('显著压低', pv.improved, 'improved')}
+    ${
+      !pv.healed.length && !pv.relieved.length && !pv.improved.length
+        ? '<p class="hint">两次求解的误差折线没有可标记的消除/缓解段：这根锁不是当前误差的主要来源（或预算阈值内本就合格）。</p>'
+        : ''
+    }`;
+  edgeTrialBtn.hidden = !pv.edgeParticipates;
+  edgeTrialBtn.textContent = `在副本上松开 ${edge} 并重新量测（让步 ${fmtSci(pv.maxConcession)}）`;
+}
+
+function renderTrialBar(state: AppState) {
+  if (!state.trial) {
+    trialBar.hidden = true;
+    return;
+  }
+  trialBar.hidden = false;
+  trialText.textContent = `试验副本中：已松开 ${state.trial.edge}，接缝已按副本结果重新量测。保留后将以该结果作为后续求解基准，或还原到应用前。`;
 }
 
 function fmtSci(n: number): string {
@@ -356,9 +578,44 @@ for (const btn of document.querySelectorAll<HTMLButtonElement>('#continuity-seg 
 }
 $('flip-a').addEventListener('click', () => store.flipOrientation('A'));
 $('flip-b').addEventListener('click', () => store.flipOrientation('B'));
-$('btn-solve').addEventListener('click', () => store.runSolve());
+$('btn-solve').addEventListener('click', () => void store.runSolve());
 $('btn-reset').addEventListener('click', () => store.resetGeometry());
 $('btn-focus').addEventListener('click', () => viewport.focusSeam());
+compareBtn.addEventListener('click', () => void store.runComparison());
+
+(Object.keys(lockInputs) as Array<'opposite' | 'side0' | 'side1'>).forEach((edge) => {
+  lockInputs[edge].addEventListener('change', () => store.toggleLock(edge, lockInputs[edge].checked));
+});
+budgetInput.addEventListener('input', () => {
+  const pct = Number(budgetInput.value);
+  budgetOut.textContent = `${pct}%`;
+  store.setMoveBudgetFrac(pct / 100);
+  store.recomputeMetrics();
+});
+$('arrow-gain').addEventListener('change', (e) =>
+  store.setArrowExaggeration((e.target as HTMLInputElement).checked ? 8 : 1),
+);
+
+clusterList.addEventListener('click', (e) => {
+  const li = (e.target as HTMLElement).closest<HTMLElement>('[data-cluster-id]');
+  if (!li?.dataset.clusterId) return;
+  store.selectCluster(Number(li.dataset.clusterId));
+});
+anomalyList.addEventListener('click', (e) => {
+  const li = (e.target as HTMLElement).closest<HTMLElement>('[data-anomaly-id]');
+  if (!li?.dataset.anomalyId) return;
+  store.selectAnomaly(Number(li.dataset.anomalyId));
+});
+edgeList.addEventListener('click', (e) => {
+  const row = (e.target as HTMLElement).closest<HTMLElement>('[data-edge]');
+  const edge = row?.dataset.edge as 'opposite' | 'side0' | 'side1' | undefined;
+  if (!edge) return;
+  if (!store.state.edgeLocks[edge]) store.toggleLock(edge, true);
+  void store.selectLockEdge(edge);
+});
+edgeTrialBtn.addEventListener('click', () => store.applyTrial());
+$('btn-trial-keep').addEventListener('click', () => store.keepTrial());
+$('btn-trial-discard').addEventListener('click', () => store.discardTrial());
 $('show-reflect').addEventListener('change', (e) =>
   viewport.setVisualOptions({ stripes: (e.target as HTMLInputElement).checked }),
 );
@@ -449,3 +706,8 @@ store.subscribe((state) => {
 });
 viewport.applyState(store.state);
 render(store.state);
+
+// Launch straight into the lock/conflict lab with real solved evidence on screen.
+void store.runSolve();
+void store.runComparison();
+void store.selectLockEdge('side1');

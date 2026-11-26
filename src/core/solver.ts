@@ -15,6 +15,21 @@ import { Vec3, dot } from './vec.js';
 export type ContinuityMode = 'G0' | 'G1' | 'C1';
 export type FixedSide = 'A' | 'B';
 
+/**
+ * The three non-seam boundary edges of the free patch. `opposite` is the row
+ * farthest from the seam; `side0`/`side1` are the two along-direction ends.
+ * Locking one removes its boundary control points from the unknowns, matching
+ * a neighbouring face that already constrains that edge.
+ */
+export type LockEdge = 'opposite' | 'side0' | 'side1';
+export type EdgeLocks = Record<LockEdge, boolean>;
+
+export const ALL_LOCK_EDGES: LockEdge[] = ['opposite', 'side0', 'side1'];
+
+export function noLocks(): EdgeLocks {
+  return { opposite: false, side0: false, side1: false };
+}
+
 export interface StitchConfig {
   sideA: Side;
   sideB: Side;
@@ -28,6 +43,8 @@ export interface StitchConfig {
   stiffness: number;
   /** extra stiffness per row away from the seam */
   shapeBias: number;
+  /** explicit boundary-edge locks; omitted means no extra edge is locked */
+  edgeLocks?: EdgeLocks;
 }
 
 export interface SolveReport {
@@ -40,11 +57,22 @@ export interface SolveReport {
   positionRows: number;
   tangentRows: number;
   rank: number;
+  /** rank of the unregularized equality/constraint block */
+  constraintRank: number;
+  /** scalar unknowns minus constraint rank: formal null-space DOF */
+  nullity: number;
   /** LS residual of the equality block (normalized) */
   residual: number;
   maxControlMove: number;
+  /** RMS displacement over all free-patch control points */
+  rmsControlMove: number;
+  /** sum of control-point displacements */
+  totalControlMove: number;
   movedCps: number;
   deformationRows: number;
+  edgeLocks: EdgeLocks;
+  /** maximum displacement measured on each (possibly locked) boundary edge */
+  edgeMaxMove: Record<LockEdge, number>;
   /** analytic post-check of the produced seam */
   check: {
     maxGap: number;
@@ -71,7 +99,48 @@ interface FreeVar {
   distance: number;
 }
 
-function freeVarList(free: Surface, side: Side, deformRows: number): FreeVar[] {
+/** Control-point indices of the three non-seam boundary edges of a free patch. */
+export function lockEdgeCpIndices(free: Surface, side: Side, edge: LockEdge): Array<[number, number]> {
+  const g = sideGeom(free, side);
+  const { nu, nv } = surfaceDims(free);
+  const crossN = g.crossAxis === 'u' ? nu : nv;
+  const alongN = g.crossAxis === 'u' ? nv : nu;
+  const farCross = g.seamRow === 0 ? crossN - 1 : 0;
+  const out: Array<[number, number]> = [];
+  if (edge === 'opposite') {
+    for (let a = 0; a < alongN; a++) {
+      const i = g.crossAxis === 'u' ? farCross : a;
+      const j = g.crossAxis === 'u' ? a : farCross;
+      out.push([i, j]);
+    }
+  } else {
+    const alongIdx = edge === 'side0' ? 0 : alongN - 1;
+    for (let c = 0; c < crossN; c++) {
+      const i = g.crossAxis === 'u' ? c : alongIdx;
+      const j = g.crossAxis === 'u' ? alongIdx : c;
+      out.push([i, j]);
+    }
+  }
+  return out;
+}
+
+function isLockedEdgeCp(
+  free: Surface,
+  side: Side,
+  locks: EdgeLocks,
+  i: number,
+  j: number,
+): LockEdge | null {
+  for (const e of ALL_LOCK_EDGES) {
+    if (!locks[e]) continue;
+    for (const [ei, ej] of lockEdgeCpIndices(free, side, e)) {
+      if (ei === i && ej === j) return e;
+    }
+  }
+  return null;
+}
+
+function freeVarList(free: Surface, side: Side, deformRows: number, locks: EdgeLocks): FreeVar[] {
   const g = sideGeom(free, side);
   const { nu, nv } = surfaceDims(free);
   const crossN = g.crossAxis === 'u' ? nu : nv;
@@ -85,6 +154,7 @@ function freeVarList(free: Surface, side: Side, deformRows: number): FreeVar[] {
     for (let a = 0; a < alongN; a++) {
       const i = g.crossAxis === 'u' ? c : a;
       const j = g.crossAxis === 'u' ? a : c;
+      if (isLockedEdgeCp(free, side, locks, i, j)) continue;
       out.push({ i, j, varIndex: 3 * k, distance: dist });
       k++;
     }
@@ -133,7 +203,8 @@ export function solveStitch(aIn: Surface, bIn: Surface, cfg: StitchConfig): Stit
   const invL = 1 / L;
 
   const messages: string[] = [];
-  const vars = freeVarList(free, freeSide, cfg.deformRows);
+  const edgeLocks: EdgeLocks = cfg.edgeLocks ?? noLocks();
+  const vars = freeVarList(free, freeSide, cfg.deformRows, edgeLocks);
   const map = new Map<string, FreeVar>();
   for (const v of vars) map.set(`${v.i},${v.j}`, v);
   const nVars = vars.length * 3;
@@ -148,10 +219,16 @@ export function solveStitch(aIn: Surface, bIn: Surface, cfg: StitchConfig): Stit
     positionRows: 0,
     tangentRows: 0,
     rank: 0,
+    constraintRank: 0,
+    nullity: 0,
     residual: 0,
     maxControlMove: 0,
+    rmsControlMove: 0,
+    totalControlMove: 0,
     movedCps: 0,
     deformationRows: new Set(vars.map((v) => v.distance)).size,
+    edgeLocks: { ...edgeLocks },
+    edgeMaxMove: { opposite: 0, side0: 0, side1: 0 },
     check: null,
     tolerances: { gap: 1e-4, tangentDeg: 0.25, c1: 1e-2 },
   };
@@ -247,6 +324,18 @@ export function solveStitch(aIn: Surface, bIn: Surface, cfg: StitchConfig): Stit
   report.tangentRows = tangentRows;
   report.equalityRows = rows.length;
 
+  // Rank of the pure constraint block (shape regularization not included), so
+  // the reported DOF/nullity describes the continuity problem itself.
+  if (rows.length > 0 && nVars > 0) {
+    try {
+      const cSvd = new SVD(new Matrix(rows), { autoTranspose: true });
+      report.constraintRank = cSvd.rank;
+      report.nullity = Math.max(0, nVars - cSvd.rank);
+    } catch {
+      report.constraintRank = 0;
+    }
+  }
+
   // Shape preservation: pull each free control point toward its current value,
   // stronger further from the seam so the deformation stays local.
   const regW = (cfg.stiffness > 0 ? cfg.stiffness : DEFAULT_STIFFNESS) * invL;
@@ -285,16 +374,32 @@ export function solveStitch(aIn: Surface, bIn: Surface, cfg: StitchConfig): Stit
   const newCps = free.cps.map((row) => row.map((p) => [p[0], p[1], p[2]] as Vec3));
   let maxMove = 0;
   let moved = 0;
+  let sumMove = 0;
+  let sumMove2 = 0;
   for (const v of vars) {
     const d: Vec3 = [x[v.varIndex], x[v.varIndex + 1], x[v.varIndex + 2]];
     const m = Math.hypot(d[0], d[1], d[2]);
     if (m > maxMove) maxMove = m;
     if (m > 1e-9 * L) moved++;
+    sumMove += m;
+    sumMove2 += m * m;
     const q = newCps[v.i][v.j];
     newCps[v.i][v.j] = [q[0] + d[0], q[1] + d[1], q[2] + d[2]];
   }
   report.maxControlMove = maxMove;
+  report.totalControlMove = sumMove;
+  report.rmsControlMove = vars.length ? Math.sqrt(sumMove2 / vars.length) : 0;
   report.movedCps = moved;
+
+  for (const e of ALL_LOCK_EDGES) {
+    let edgeMax = 0;
+    for (const [i, j] of lockEdgeCpIndices(free, freeSide, e)) {
+      const p0 = free.cps[i][j];
+      const p1 = newCps[i][j];
+      edgeMax = Math.max(edgeMax, Math.hypot(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]));
+    }
+    report.edgeMaxMove[e] = edgeMax;
+  }
 
   const newFree = withCps(free, newCps, free.name);
   const resultA = freeIsB ? a : newFree;

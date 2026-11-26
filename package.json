@@ -9,7 +9,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test": "vitest run",
-    "cli": "tsx src/cli.ts"
+    "cli": "tsx src/cli.ts",
+    "experiments": "tsx scripts/experiments.ts",
+    "experiments:check": "tsx scripts/experiments.ts --check"
   },
   "dependencies": {
     "ml-matrix": "^6.15.1",

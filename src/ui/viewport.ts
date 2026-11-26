@@ -2,8 +2,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { AppStore, AppState } from './store.js';
 import { Surface, evalSurface } from '../core/surface.js';
-import { boundarySamples, Side } from '../core/seam.js';
+import { boundarySamples, Side, sideGeom } from '../core/seam.js';
 import { gapComb, surfaceMesh } from '../core/render.js';
+import { lockEdgeToSide } from '../core/route-lab.js';
+import { lockEdgeCpIndices, LockEdge } from '../core/solver.js';
 import { Vec3 } from '../core/vec.js';
 
 interface PatchView {
@@ -23,6 +25,8 @@ export class Viewport {
   private patches: { A: PatchView; B: PatchView };
   private seamGroup = new THREE.Group();
   private selectionGroup = new THREE.Group();
+  private annotationGroup = new THREE.Group();
+  private lastFocusNonce = 0;
   private resizeObs: ResizeObserver;
   private store: AppStore;
   private container: HTMLElement;
@@ -65,7 +69,7 @@ export class Viewport {
 
     this.setupLights();
     this.patches = { A: this.buildPatch('A'), B: this.buildPatch('B') };
-    this.scene.add(this.seamGroup, this.selectionGroup);
+    this.scene.add(this.seamGroup, this.selectionGroup, this.annotationGroup);
 
     this.hoverEl = document.createElement('div');
     this.hoverEl.className = 'viewport-hover';
@@ -201,6 +205,10 @@ export class Viewport {
       this.lastSceneId = state.scene.id;
       this.fitted = false;
     }
+    if (state.focusRequest && state.focusRequest.nonce !== this.lastFocusNonce) {
+      this.lastFocusNonce = state.focusRequest.nonce;
+      this.focusPoint(state.focusRequest.p);
+    }
     this.pendingState = state;
     this.needsRebuild = true;
   }
@@ -249,10 +257,127 @@ export class Viewport {
       }
     }
     this.rebuildSelection(st);
+    this.rebuildAnnotations(st);
     if (!this.fitted) {
       this.fitCamera(st);
       this.fitted = true;
     }
+  }
+
+  private rebuildAnnotations(st: AppState) {
+    clearGroup(this.annotationGroup);
+
+    // Conflict / anomaly markers. A route comparison wins over the ordinary
+    // single-route anomaly list because it carries the 不可兼得 classification.
+    const clusters = st.comparison ? st.comparison.g1.clusters : st.anomalies;
+    for (const c of clusters) {
+      const color =
+        c.level === 'blocked' ? 0xff4d4d : c.level === 'exclusive' ? 0xff9f1c : 0xffd23f;
+      const selected = st.selectedClusterId === c.id;
+      const r = selected ? 0.055 : 0.034;
+      const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(r, 20, 14),
+        new THREE.MeshBasicMaterial({ color, depthTest: false }),
+      );
+      sphere.position.set(c.point[0], c.point[1], c.point[2]);
+      sphere.renderOrder = 20;
+      this.annotationGroup.add(sphere);
+      if (selected) {
+        const beam = makeLine(
+          [
+            c.point,
+            [c.point[0], c.point[1] + 0.35, c.point[2]],
+          ],
+          color,
+          false,
+        );
+        (beam.material as THREE.LineBasicMaterial).depthTest = false;
+        beam.renderOrder = 19;
+        this.annotationGroup.add(beam);
+        const ring = new THREE.Mesh(
+          new THREE.TorusGeometry(0.09, 0.008, 10, 40),
+          new THREE.MeshBasicMaterial({ color, depthTest: false }),
+        );
+        ring.position.set(c.point[0], c.point[1], c.point[2]);
+        ring.renderOrder = 21;
+        this.annotationGroup.add(ring);
+      }
+    }
+
+    // Highlight the selected lock edge on the free patch + its locked poles.
+    if (st.selectedLockEdge) {
+      const freeWhich: 'A' | 'B' = st.fixed === 'A' ? 'B' : 'A';
+      const freeSurf = freeWhich === 'A' ? st.a : st.b;
+      const seamSide = freeWhich === 'A' ? st.sideA : st.sideB;
+      const edge: LockEdge = st.selectedLockEdge;
+      const locked = st.edgeLocks[edge];
+      const color = locked ? 0xff5cf0 : 0x7a5578;
+      try {
+        const edgeSide = lockEdgeToSide(seamSide, sideGeom(freeSurf, seamSide), edge);
+        const bs = boundarySamples(freeSurf, edgeSide, 100);
+        this.annotationGroup.add(makeTube(bs.pts, color, 0.014));
+        for (const [i, j] of lockEdgeCpIndices(freeSurf, seamSide, edge)) {
+          const p = freeSurf.cps[i][j];
+          const pole = new THREE.Mesh(
+            new THREE.SphereGeometry(0.028, 14, 10),
+            new THREE.MeshBasicMaterial({ color, depthTest: false }),
+          );
+          pole.position.set(p[0], p[1], p[2]);
+          pole.renderOrder = 18;
+          this.annotationGroup.add(pole);
+        }
+      } catch {
+        // surface/side geometry not evaluable for this selection; skip highlight
+      }
+    }
+
+    // Edge-release counterfactual: concession arrows + healed segment tubes.
+    const pv = st.edgePreview;
+    if (pv) {
+      const gain = st.arrowExaggeration;
+      for (const ar of pv.arrows) {
+        if (ar.move < 1e-9) continue;
+        const dir = new THREE.Vector3(ar.delta[0], ar.delta[1], ar.delta[2]).normalize();
+        const len = ar.move * gain;
+        const arrow = new THREE.ArrowHelper(
+          dir,
+          new THREE.Vector3(ar.from[0], ar.from[1], ar.from[2]),
+          len,
+          0xff5cf0,
+          Math.min(0.09, len * 0.35),
+          Math.min(0.05, len * 0.2),
+        );
+        this.annotationGroup.add(arrow);
+        const tip = new THREE.Mesh(
+          new THREE.SphereGeometry(0.02, 10, 8),
+          new THREE.MeshBasicMaterial({ color: 0x4fc3ff, depthTest: false }),
+        );
+        tip.position.set(ar.to[0], ar.to[1], ar.to[2]);
+        tip.renderOrder = 22;
+        this.annotationGroup.add(tip);
+      }
+      for (const r of pv.healed) this.annotationGroup.add(makeTube(r.points, 0x39ff88, 0.016));
+      for (const r of pv.relieved) this.annotationGroup.add(makeTube(r.points, 0xffb020, 0.014));
+      for (const r of pv.improved) this.annotationGroup.add(makeTube(r.points, 0x4fc3ff, 0.012));
+    }
+  }
+
+  /** Focus the camera on a world point without changing the viewing direction. */
+  focusPoint(p: Vec3) {
+    const target = this.controls.target;
+    const dir = new THREE.Vector3(
+      this.camera.position.x - target.x,
+      this.camera.position.y - target.y,
+      this.camera.position.z - target.z,
+    );
+    const curDist = dir.length() || 1;
+    dir.normalize();
+    const dist = Math.min(Math.max(curDist * 0.45, 0.55), 1.6);
+    this.controls.target.set(p[0], p[1], p[2]);
+    this.camera.position.set(p[0] + dir.x * dist, p[1] + dir.y * dist, p[2] + dir.z * dist);
+    this.camera.near = Math.max(0.002, dist * 0.02);
+    this.camera.updateProjectionMatrix();
+    this.controls.update();
   }
 
   private rebuildSelection(st: AppState) {
@@ -471,6 +596,22 @@ function clearGroup(g: THREE.Group) {
       else if (mat) (mat as THREE.Material).dispose();
     });
   }
+}
+
+function makeTube(pts: Vec3[], color: number, radius: number): THREE.Group {
+  const group = new THREE.Group();
+  if (pts.length === 0) return group;
+  if (pts.length < 3) {
+    group.add(makeLine(pts, color, false));
+    return group;
+  }
+  const v = pts.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+  const curve = new THREE.CatmullRomCurve3(v, false, 'catmullrom', 0.1);
+  const segs = Math.max(24, Math.min(240, pts.length * 2));
+  const geom = new THREE.TubeGeometry(curve, segs, radius, 8, false);
+  const mesh = new THREE.Mesh(geom, new THREE.MeshBasicMaterial({ color }));
+  group.add(mesh);
+  return group;
 }
 
 function makeLine(pts: Vec3[], color: number, dashed = false): THREE.Line {

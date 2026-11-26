@@ -1,6 +1,7 @@
 import { interpolateSurface } from './fit.js';
-import { Surface, makeSurface, withOrientation } from './surface.js';
+import { Surface, makeSurface, withOrientation, withCps } from './surface.js';
 import { clampedUniformKnots, knotsFromBreaks, cpCountFor } from './bspline.js';
+import type { EdgeLocks } from './solver.js';
 import { Vec3 } from './vec.js';
 
 export interface ScenePatch {
@@ -23,6 +24,10 @@ export interface Scene {
   fixed?: 'A' | 'B';
   /** suggested deformable control-row count when opening the scene */
   deformRows?: number;
+  /** edge locks to enable when opening the scene */
+  edgeLocks?: EdgeLocks;
+  /** suggested correspondence when opening the scene (defaults to arc-length) */
+  correspondenceMode?: 'arclength' | 'parameter';
   /** suggested note for the user */
   note: string;
 }
@@ -209,6 +214,52 @@ function sceneConflict(): Scene {
   };
 }
 
+/**
+ * B7 — a clean, localised end conflict for the lock-edge / concession lab.
+ * The pair starts as an almost perfect C1 match; the V=1 end control column of B
+ * is then pushed away to mimic an incompatible neighbouring face that holds
+ * that edge. With `side1` locked the solver cannot heal the last seam segment;
+ * releasing that one edge removes exactly that segment (measured, not asserted).
+ */
+function sceneLockLab(): Scene {
+  const nu = 8;
+  const nv = 13;
+  const a = build(uni(nu, 3), uni(nv, 3), 3, (u, v) => [u, v, 0], 'A');
+  const bPerfect = build(
+    uni(nu, 3),
+    uni(nv, 3),
+    3,
+    (s, t) => [1 + s, t, 0.35 * s * s],
+    'B',
+  );
+  const cps = bPerfect.cps.map((row) => row.map((q) => [...q] as Vec3));
+  for (let i = 0; i < nu; i++) {
+    const fall = 1 - i / (nu - 1);
+    cps[i][nv - 1][0] += 0.16 * fall;
+    cps[i][nv - 1][2] += 0.3 * fall;
+  }
+  const b = withCps(bPerfect, cps, 'B');
+  return {
+    id: 'locklab',
+    name: '锁定边冲突 / 让步预演',
+    description:
+      '两片本已几乎完全连续，仅 B 的 V=1 端列被外侧邻面顶偏。该端边默认锁定，' +
+      '求解后只有接缝末段超差；在右侧对该锁定边做“松开预演”，可看到将消除哪段误差折线、' +
+      '需要多大的控制点让步，并可在副本上应用后重新量测。',
+    a,
+    b,
+    sideA: 'u1',
+    sideB: 'u0',
+    direction: 1,
+    continuity: 'G1',
+    fixed: 'A',
+    deformRows: 6,
+    edgeLocks: { opposite: false, side0: false, side1: true },
+    correspondenceMode: 'parameter',
+    note: '选中“终点侧边 side1”查看松开效果：误差段应在解析复检中消失，让步箭头即该边控制点位移。',
+  };
+}
+
 export const SCENES: Scene[] = [
   sceneSpeed(),
   sceneTilt(),
@@ -216,6 +267,7 @@ export const SCENES: Scene[] = [
   sceneDensity(),
   sceneCurved(),
   sceneConflict(),
+  sceneLockLab(),
 ];
 
 export function getScene(id: string): Scene {

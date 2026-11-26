@@ -1,0 +1,582 @@
+{
+  "schemaVersion": 1,
+  "note": "All values computed by src/experiments/run.ts; regenerate with `npm run experiments`.",
+  "velocity": [
+    {
+      "lambda": 1,
+      "g1Move": 1.00009e-12,
+      "g1Tan": 0,
+      "g1Ratio": "1.00–1.00",
+      "g1C1": 1.49791e-11,
+      "c1Move": 1.00009e-12,
+      "c1C1": 7.7969e-15,
+      "c1Ratio": "1.00–1.00",
+      "c1Dev": 1.00009e-12,
+      "c1Energy": 1.78955e-23
+    },
+    {
+      "lambda": 1.25,
+      "g1Move": 9.99867e-13,
+      "g1Tan": 0,
+      "g1Ratio": "1.25–1.25",
+      "g1C1": 0.25,
+      "c1Move": 0.0166667,
+      "c1C1": 4.43985e-8,
+      "c1Ratio": "1.00–1.00",
+      "c1Dev": 0.00992236,
+      "c1Energy": 0.0125
+    },
+    {
+      "lambda": 1.5,
+      "g1Move": 1.00009e-12,
+      "g1Tan": 0,
+      "g1Ratio": "1.50–1.50",
+      "g1C1": 0.5,
+      "c1Move": 0.0333333,
+      "c1C1": 8.8797e-8,
+      "c1Ratio": "1.00–1.00",
+      "c1Dev": 0.0198447,
+      "c1Energy": 0.05
+    },
+    {
+      "lambda": 2,
+      "g1Move": 1.00009e-12,
+      "g1Tan": 0,
+      "g1Ratio": "2.00–2.00",
+      "g1C1": 1,
+      "c1Move": 0.0666667,
+      "c1C1": 1.77594e-7,
+      "c1Ratio": "1.00–1.00",
+      "c1Dev": 0.0396894,
+      "c1Energy": 0.2
+    },
+    {
+      "lambda": 3,
+      "g1Move": 1.00009e-12,
+      "g1Tan": 0,
+      "g1Ratio": "3.00–3.00",
+      "g1C1": 2,
+      "c1Move": 0.133333,
+      "c1C1": 3.55188e-7,
+      "c1Ratio": "1.00–1.00",
+      "c1Dev": 0.0793789,
+      "c1Energy": 0.8
+    }
+  ],
+  "dof": [
+    {
+      "case": "λ=2，变形 3 行，无附加锁",
+      "mode": "G0",
+      "variables": 81,
+      "constraintRank": 27,
+      "nullity": 54
+    },
+    {
+      "case": "λ=2，变形 3 行，无附加锁",
+      "mode": "G1",
+      "variables": 81,
+      "constraintRank": 36,
+      "nullity": 45
+    },
+    {
+      "case": "λ=2，变形 3 行，无附加锁",
+      "mode": "C1",
+      "variables": 81,
+      "constraintRank": 54,
+      "nullity": 27
+    },
+    {
+      "case": "λ=2，全部 8 行可变形但锁住对侧边",
+      "mode": "G1",
+      "variables": 189,
+      "constraintRank": 36,
+      "nullity": 153
+    },
+    {
+      "case": "λ=2，全部 8 行可变形但锁住对侧边",
+      "mode": "C1",
+      "variables": 189,
+      "constraintRank": 54,
+      "nullity": 135
+    }
+  ],
+  "modelLock": {
+    "noLock": {
+      "recommendation": "C1",
+      "g1Status": "ok",
+      "c1Status": "ok",
+      "g1Tan": 0,
+      "c1C1": 1.77594e-7,
+      "g1Move": 1.00009e-12,
+      "c1Move": 0.0666667,
+      "c1Dev": 0.0396894,
+      "nullityG1": 45,
+      "nullityC1": 27,
+      "exclusiveClusters": [],
+      "reasons": [
+        "实测 C1 可达（最大失配 1.78e-7）且最大控制点位移 0.0667 在让步预算 0.1200 内。",
+        "两侧参数速度本就接近 1，坚持参数导数一致几乎没有形状代价。"
+      ]
+    },
+    "oppositeLocked": {
+      "recommendation": "C1",
+      "g1Status": "ok",
+      "c1Status": "ok",
+      "g1Tan": 0,
+      "c1C1": 1.77594e-7,
+      "g1Move": 1.00009e-12,
+      "c1Move": 0.0666667,
+      "c1Dev": 0.0396894,
+      "nullityG1": 153,
+      "nullityC1": 135,
+      "exclusiveClusters": [],
+      "reasons": [
+        "实测 C1 可达（最大失配 1.78e-7）且最大控制点位移 0.0667 在让步预算 0.1200 内。",
+        "两侧参数速度本就接近 1，坚持参数导数一致几乎没有形状代价。"
+      ]
+    }
+  },
+  "bump": {
+    "ratioMin": 1,
+    "ratioMax": 2.5933,
+    "rows1": {
+      "recommendation": "G1",
+      "g1Status": "ok",
+      "c1Status": "conflict",
+      "g1Tan": 0,
+      "c1C1": 1.59298,
+      "g1Move": 1.5612e-12,
+      "c1Move": 0.0000248327,
+      "c1Dev": 0.0000238675,
+      "nullityG1": 0,
+      "nullityC1": 0,
+      "exclusiveClusters": [
+        {
+          "xi0": 0.2625,
+          "xi1": 0.975,
+          "level": "exclusive",
+          "maxC1": 1.59298,
+          "maxMoveC1": 0.0000248327
+        }
+      ],
+      "reasons": [
+        "G1 路线实测切平面偏差 ≤ 0.25°，几何连续成立。",
+        "C1 路线在当前锁定/自由度下未达参数导数一致（最大失配 1.59e+0，状态 conflict）。",
+        "建议以共切面连续(G1)为优先，允许参数速度不同；需要 C1 时再松开锁定边或增加变形行。"
+      ]
+    },
+    "rows2": {
+      "recommendation": "C1",
+      "g1Status": "ok",
+      "c1Status": "ok",
+      "g1Tan": 0,
+      "c1C1": 0.00568104,
+      "g1Move": 1.5612e-12,
+      "c1Move": 0.110402,
+      "c1Dev": 0.0631716,
+      "nullityG1": 26,
+      "nullityC1": 0,
+      "exclusiveClusters": [],
+      "reasons": [
+        "实测 C1 可达（最大失配 5.68e-3）且最大控制点位移 0.1104 在让步预算 0.1462 内。",
+        "两侧参数速度本就接近 1，坚持参数导数一致几乎没有形状代价。"
+      ]
+    },
+    "releaseSide1": {
+      "scene": "bump(rows2,C1)",
+      "edge": "side1",
+      "baseLocks": "{\"opposite\":true,\"side0\":true,\"side1\":true}",
+      "participates": true,
+      "concession": 0.000378736,
+      "beforeGap": 1.9843e-12,
+      "afterGap": 1.9883e-12,
+      "beforeTan": 5.6843e-13,
+      "afterTan": 2.3022e-12,
+      "beforeC1": 0.00568104,
+      "afterC1": 4.81856e-7,
+      "badFractionBefore": 0,
+      "healedFractionOfBad": 0,
+      "eliminatedRanges": 0,
+      "relievedRanges": 0,
+      "improvedRanges": 1
+    }
+  },
+  "reverse": [
+    {
+      "direction": 1,
+      "stage": "initial",
+      "maxGap": 1.01612,
+      "tangentDeg": 10.123,
+      "opposed": false
+    },
+    {
+      "direction": 1,
+      "stage": "G1",
+      "maxGap": 2.76769e-11,
+      "tangentDeg": 0.0000034254,
+      "opposed": true,
+      "status": "conflict"
+    },
+    {
+      "direction": -1,
+      "stage": "initial",
+      "maxGap": 0.15,
+      "tangentDeg": 6.808,
+      "opposed": false
+    },
+    {
+      "direction": -1,
+      "stage": "G1",
+      "maxGap": 5.27698e-12,
+      "tangentDeg": 0.0000069038,
+      "opposed": false,
+      "status": "ok"
+    }
+  ],
+  "degrees": [
+    {
+      "degrees": "2 / 2 同次",
+      "nu": 7,
+      "nv": 8,
+      "g1Move": 1.00076e-12,
+      "g1Tan": 0,
+      "g1Status": "ok",
+      "c1Move": 0.1,
+      "c1C1": 3.12708e-7,
+      "c1Status": "ok"
+    },
+    {
+      "degrees": "3 / 3 同次",
+      "nu": 8,
+      "nv": 9,
+      "g1Move": 1.00009e-12,
+      "g1Tan": 0,
+      "g1Status": "ok",
+      "c1Move": 0.0666667,
+      "c1C1": 1.77594e-7,
+      "c1Status": "ok"
+    },
+    {
+      "degrees": "4 / 4 同次",
+      "nu": 9,
+      "nv": 10,
+      "g1Move": 9.98424e-13,
+      "g1Tan": 0,
+      "g1Status": "ok",
+      "c1Move": 0.05,
+      "c1C1": 1.11527e-7,
+      "c1Status": "ok"
+    },
+    {
+      "degrees": "A2 / B3 异次",
+      "nu": 8,
+      "nv": 9,
+      "g1Move": 1.00109e-12,
+      "g1Tan": 0,
+      "g1Status": "ok",
+      "c1Move": 0.0666667,
+      "c1C1": 1.77594e-7,
+      "c1Status": "ok"
+    },
+    {
+      "degrees": "A3 / B4 异次",
+      "nu": 9,
+      "nv": 10,
+      "g1Move": 1.00265e-12,
+      "g1Tan": 0,
+      "g1Status": "ok",
+      "c1Move": 0.05,
+      "c1C1": 1.11527e-7,
+      "c1Status": "ok"
+    }
+  ],
+  "scenes": [
+    {
+      "scene": "speed",
+      "mode": "G0",
+      "fixed": "A",
+      "deformRows": 3,
+      "status": "ok",
+      "maxGap": 6.68443e-16,
+      "tangentDeg": 0,
+      "c1": 1,
+      "maxMove": 9.9798e-13
+    },
+    {
+      "scene": "speed",
+      "mode": "G1",
+      "fixed": "A",
+      "deformRows": 3,
+      "status": "ok",
+      "maxGap": 6.68443e-16,
+      "tangentDeg": 0,
+      "c1": 1,
+      "maxMove": 9.9798e-13
+    },
+    {
+      "scene": "speed",
+      "mode": "C1",
+      "fixed": "A",
+      "deformRows": 3,
+      "status": "ok",
+      "maxGap": 1.96054e-12,
+      "tangentDeg": 3.2685e-13,
+      "c1": 1.63403e-7,
+      "maxMove": 0.0833333
+    },
+    {
+      "scene": "tilt",
+      "mode": "G0",
+      "fixed": "A",
+      "deformRows": 3,
+      "status": "ok",
+      "maxGap": 6.23512e-12,
+      "tangentDeg": 32.949,
+      "c1": 2.09314,
+      "maxMove": 0.200998
+    },
+    {
+      "scene": "tilt",
+      "mode": "G1",
+      "fixed": "A",
+      "deformRows": 3,
+      "status": "ok",
+      "maxGap": 9.6609e-12,
+      "tangentDeg": 0.000010118,
+      "c1": 1.57102,
+      "maxMove": 0.200998
+    },
+    {
+      "scene": "tilt",
+      "mode": "C1",
+      "fixed": "A",
+      "deformRows": 3,
+      "status": "ok",
+      "maxGap": 1.20622e-11,
+      "tangentDeg": 0.000012205,
+      "c1": 2.89692e-7,
+      "maxMove": 0.200998
+    },
+    {
+      "scene": "reversed",
+      "mode": "G0",
+      "fixed": "A",
+      "deformRows": 3,
+      "status": "ok",
+      "maxGap": 3.52951e-12,
+      "tangentDeg": 27.26,
+      "c1": 1.1945,
+      "maxMove": 0.15
+    },
+    {
+      "scene": "reversed",
+      "mode": "G1",
+      "fixed": "A",
+      "deformRows": 3,
+      "status": "ok",
+      "maxGap": 5.27698e-12,
+      "tangentDeg": 0.0000069038,
+      "c1": 0.783527,
+      "maxMove": 0.15
+    },
+    {
+      "scene": "reversed",
+      "mode": "C1",
+      "fixed": "A",
+      "deformRows": 3,
+      "status": "ok",
+      "maxGap": 6.49808e-12,
+      "tangentDeg": 0.0000086012,
+      "c1": 1.95472e-7,
+      "maxMove": 0.15
+    },
+    {
+      "scene": "density",
+      "mode": "G0",
+      "fixed": "B",
+      "deformRows": 4,
+      "status": "ok",
+      "maxGap": 0.00014322,
+      "tangentDeg": 79.726,
+      "c1": 0.985234,
+      "maxMove": 0.308627
+    },
+    {
+      "scene": "density",
+      "mode": "G1",
+      "fixed": "B",
+      "deformRows": 4,
+      "status": "ok",
+      "maxGap": 0.00014322,
+      "tangentDeg": 0.20191,
+      "c1": 0.776283,
+      "maxMove": 0.311356
+    },
+    {
+      "scene": "density",
+      "mode": "C1",
+      "fixed": "B",
+      "deformRows": 4,
+      "status": "ok",
+      "maxGap": 0.00014306,
+      "tangentDeg": 0.00050962,
+      "c1": 0.0000113237,
+      "maxMove": 0.313465
+    },
+    {
+      "scene": "curved",
+      "mode": "G0",
+      "fixed": "B",
+      "deformRows": 4,
+      "status": "ok",
+      "maxGap": 0.0000586801,
+      "tangentDeg": 9.4679,
+      "c1": 0.850998,
+      "maxMove": 0.250832
+    },
+    {
+      "scene": "curved",
+      "mode": "G1",
+      "fixed": "B",
+      "deformRows": 4,
+      "status": "ok",
+      "maxGap": 0.0000586801,
+      "tangentDeg": 0.011855,
+      "c1": 0.849044,
+      "maxMove": 0.250832
+    },
+    {
+      "scene": "curved",
+      "mode": "C1",
+      "fixed": "B",
+      "deformRows": 4,
+      "status": "ok",
+      "maxGap": 0.0000586708,
+      "tangentDeg": 0.0011708,
+      "c1": 0.000130611,
+      "maxMove": 0.294895
+    },
+    {
+      "scene": "conflict",
+      "mode": "G0",
+      "fixed": "B",
+      "deformRows": 1,
+      "status": "ok",
+      "maxGap": 1.80342e-11,
+      "tangentDeg": 59.652,
+      "c1": 0.92069,
+      "maxMove": 0.583095
+    },
+    {
+      "scene": "conflict",
+      "mode": "G1",
+      "fixed": "B",
+      "deformRows": 1,
+      "status": "conflict",
+      "maxGap": 0.0000374376,
+      "tangentDeg": 59.651,
+      "c1": 0.920683,
+      "maxMove": 0.583061
+    },
+    {
+      "scene": "conflict",
+      "mode": "C1",
+      "fixed": "B",
+      "deformRows": 1,
+      "status": "conflict",
+      "maxGap": 0.0000399414,
+      "tangentDeg": 59.652,
+      "c1": 0.920685,
+      "maxMove": 0.583055
+    },
+    {
+      "scene": "locklab",
+      "mode": "G0",
+      "fixed": "A",
+      "deformRows": 6,
+      "status": "conflict",
+      "maxGap": 0.34,
+      "tangentDeg": 44.37,
+      "c1": 1.26004,
+      "maxMove": 0.189449
+    },
+    {
+      "scene": "locklab",
+      "mode": "G1",
+      "fixed": "A",
+      "deformRows": 6,
+      "status": "conflict",
+      "maxGap": 0.34,
+      "tangentDeg": 44.37,
+      "c1": 0.728571,
+      "maxMove": 0.189449
+    },
+    {
+      "scene": "locklab",
+      "mode": "C1",
+      "fixed": "A",
+      "deformRows": 6,
+      "status": "conflict",
+      "maxGap": 0.34,
+      "tangentDeg": 44.37,
+      "c1": 0.728571,
+      "maxMove": 0.188591
+    }
+  ],
+  "locks": [
+    {
+      "scene": "locklab(all-locked)",
+      "edge": "opposite",
+      "baseLocks": "{\"opposite\":true,\"side0\":true,\"side1\":true}",
+      "participates": false,
+      "concession": 0,
+      "beforeGap": 0.34,
+      "afterGap": 0.34,
+      "beforeTan": 44.37,
+      "afterTan": 44.37,
+      "beforeC1": 0.728571,
+      "afterC1": 0.728571,
+      "badFractionBefore": 0.791,
+      "healedFractionOfBad": 0,
+      "eliminatedRanges": 0,
+      "relievedRanges": 0,
+      "improvedRanges": 0
+    },
+    {
+      "scene": "locklab(all-locked)",
+      "edge": "side0",
+      "baseLocks": "{\"opposite\":true,\"side0\":true,\"side1\":true}",
+      "participates": true,
+      "concession": 0.000108762,
+      "beforeGap": 0.34,
+      "afterGap": 0.34,
+      "beforeTan": 44.37,
+      "afterTan": 44.37,
+      "beforeC1": 0.728571,
+      "afterC1": 0.728571,
+      "badFractionBefore": 0.791,
+      "healedFractionOfBad": 0,
+      "eliminatedRanges": 0,
+      "relievedRanges": 0,
+      "improvedRanges": 0
+    },
+    {
+      "scene": "locklab(all-locked)",
+      "edge": "side1",
+      "baseLocks": "{\"opposite\":true,\"side0\":true,\"side1\":true}",
+      "participates": true,
+      "concession": 0.34,
+      "beforeGap": 0.34,
+      "afterGap": 5.5037e-11,
+      "beforeTan": 44.37,
+      "afterTan": 0.000026013,
+      "beforeC1": 0.728571,
+      "afterC1": 2.05714,
+      "badFractionBefore": 0.791,
+      "healedFractionOfBad": 1,
+      "eliminatedRanges": 3,
+      "relievedRanges": 0,
+      "improvedRanges": 2
+    }
+  ]
+}

@@ -8,13 +8,15 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { SCENES, getScene } from './core/scenes.js';
-import { solveStitch, ContinuityMode, FixedSide } from './core/solver.js';
+import { solveStitch, ContinuityMode, FixedSide, noLocks } from './core/solver.js';
+import { cloneSurface } from './core/surface.js';
 import { autoDirection, buildCorrespondence, SIDES, Side } from './core/seam.js';
 import { measureSeam } from './core/continuity.js';
 import { exportBundle } from './core/exporters.js';
 
 interface Args {
   scene?: string;
+  all?: boolean;
   sideA?: Side;
   sideB?: Side;
   continuity?: ContinuityMode;
@@ -41,6 +43,9 @@ function parse(argv: string[]): Args {
       return v;
     };
     switch (k) {
+      case '--all':
+        a.all = true;
+        break;
       case '--scene':
         a.scene = take();
         break;
@@ -98,8 +103,10 @@ const HELP = `surface-stitch CLI — auxiliary helper (the GUI is the primary in
 
 Usage:
   npm run cli -- --scene <id> [options]
+  npm run cli -- --all                 run every scene x G0/G1/C1 smoke matrix
 
 Options:
+  --all                       run the full scene/mode matrix and print one row per run
   --list                     list available test scenes
   --scene <id>               scene id (default: tilt)
   --side-a <u0|u1|v0|v1>     boundary on patch A (default: scene value)
@@ -117,6 +124,47 @@ Options:
 
 Exit code is 0 on success, 2 on constraint conflict, 3 on degenerate solving.
 `;
+
+function runAllMatrix(): number {
+  const modes: ContinuityMode[] = ['G0', 'G1', 'C1'];
+  console.log('scene       mode status      gap        tanDeg    c1        maxMove');
+  let threw = 0;
+  let conflicts = 0;
+  for (const sc of SCENES) {
+    const fixed = sc.fixed ?? 'A';
+    const rows = sc.deformRows ?? 3;
+    const corrMode = sc.correspondenceMode ?? 'arclength';
+    const dir = sc.direction ?? autoDirection(sc.a, sc.sideA, sc.b, sc.sideB);
+    for (const mode of modes) {
+      try {
+        const corr = buildCorrespondence(sc.a, sc.sideA, sc.b, sc.sideB, 64, dir, corrMode);
+        const res = solveStitch(cloneSurface(sc.a), cloneSurface(sc.b), {
+          sideA: sc.sideA,
+          sideB: sc.sideB,
+          continuity: mode,
+          correspondence: corr,
+          fixed,
+          deformRows: rows,
+          stiffness: 1e-2,
+          shapeBias: 0,
+          edgeLocks: sc.edgeLocks ?? noLocks(),
+        });
+        const m = measureSeam(res.a, sc.sideA, res.b, sc.sideB, corr, 160);
+        if (res.report.status === 'conflict') conflicts++;
+        console.log(
+          `${sc.id.padEnd(11)} ${mode.padEnd(4)} ${res.report.status.padEnd(11)} ` +
+            `${m.maxGap.toExponential(2).padStart(10)} ${m.maxTangentPlaneDeg.toFixed(3).padStart(9)} ` +
+            `${m.maxC1Mismatch.toExponential(2).padStart(9)} ${res.report.maxControlMove.toExponential(2).padStart(9)}`,
+        );
+      } catch (err) {
+        threw++;
+        console.log(`${sc.id.padEnd(11)} ${mode.padEnd(4)} THROW       ${(err as Error).message}`);
+      }
+    }
+  }
+  console.log(`\n${SCENES.length} scenes x 3 modes = ${SCENES.length * 3} runs; reported conflicts: ${conflicts}; throws: ${threw}`);
+  return threw ? 1 : 0;
+}
 
 function main(): number {
   let args: Args;
@@ -137,6 +185,10 @@ function main(): number {
       console.log(`           ${sc.description}`);
     }
     return 0;
+  }
+
+  if (args.all) {
+    return runAllMatrix();
   }
 
   const sceneId = args.scene ?? 'tilt';
@@ -164,20 +216,20 @@ function main(): number {
     console.error('error: --continuity must be G0, G1 or C1');
     return 1;
   }
-  const fixed = args.fixed ?? 'A';
+  const fixed = args.fixed ?? scene.fixed ?? 'A';
   if (fixed !== 'A' && fixed !== 'B') {
     console.error('error: --fixed must be A or B');
     return 1;
   }
   const samples = Math.max(6, args.samples ?? 48);
-  const deformRows = Math.max(1, args.deformRows ?? 3);
+  const deformRows = Math.max(1, args.deformRows ?? scene.deformRows ?? 3);
   const stiffness = args.stiffness ?? 1e-2;
   const shapeBias = args.shapeBias ?? 0;
-  const correspondence = args.correspondence ?? 'arclength';
-  const direction = args.direction ?? autoDirection(scene.a, sideA, scene.b, sideB);
+  const correspondence = args.correspondence ?? scene.correspondenceMode ?? 'arclength';
+  const direction = args.direction ?? scene.direction ?? autoDirection(scene.a, sideA, scene.b, sideB);
 
   const corr = buildCorrespondence(scene.a, sideA, scene.b, sideB, samples, direction, correspondence);
-  const res = solveStitch(scene.a, scene.b, {
+  const res = solveStitch(cloneSurface(scene.a), cloneSurface(scene.b), {
     sideA,
     sideB,
     continuity,
@@ -186,6 +238,7 @@ function main(): number {
     deformRows,
     stiffness,
     shapeBias,
+    edgeLocks: scene.edgeLocks ?? noLocks(),
   });
   const metrics = measureSeam(res.a, sideA, res.b, sideB, corr, 240);
 

@@ -100,7 +100,24 @@
         </section>
 
         <section class="group">
-          <h2>4. 视窗显示</h2>
+          <h2>4. 边界锁与连续性取舍</h2>
+          <p class="hint">比较 G1 共切面与 C1 参数导数两条路线时，可锁住对侧 / 两端边界；切换连续性模型期间这些锁保持生效。</p>
+          <div class="lock-grid">
+            <label class="toggle"><input type="checkbox" id="lock-opposite" /><span>对侧边 opposite（远排）</span></label>
+            <label class="toggle"><input type="checkbox" id="lock-side0" /><span>起点侧边 side0</span></label>
+            <label class="toggle"><input type="checkbox" id="lock-side1" /><span>终点侧边 side1</span></label>
+          </div>
+          <label class="field range">
+            <span>让步预算（占模型尺度）<output id="budget-out">4%</output></span>
+            <input id="move-budget" type="range" min="1" max="15" step="1" value="4" />
+          </label>
+          <button id="btn-compare" class="primary" type="button">实测 G1 / C1 路线对比</button>
+          <p class="hint busy-line" id="lab-busy" role="status" aria-live="polite"></p>
+          <label class="toggle"><input id="arrow-gain" type="checkbox" /><span>让步箭头视觉放大 ×8（面板读数仍是真实位移）</span></label>
+        </section>
+
+        <section class="group">
+          <h2>5. 视窗显示</h2>
           <label class="toggle"><input id="show-reflect" type="checkbox" checked /><span>反射线条纹</span></label>
           <label class="toggle"><input id="show-gap" type="checkbox" checked /><span>接缝间隙梳</span></label>
           <label class="toggle"><input id="show-net" type="checkbox" /><span>控制网</span></label>
@@ -108,6 +125,7 @@
 
         <section class="group actions">
           <button id="btn-solve" class="primary" type="button">求解拼接</button>
+          <span id="solve-state" class="run-state" role="status" aria-live="polite"></span>
           <div class="boundary-row">
             <button id="btn-focus" class="ghost" type="button">聚焦接缝</button>
             <button id="btn-reset" class="ghost" type="button">重置几何</button>
@@ -117,14 +135,24 @@
 
       <section class="stage">
         <div id="viewport" class="viewport" aria-label="三维曲面视窗"></div>
+        <div id="trial-bar" class="trial-bar" hidden>
+          <span id="trial-text" class="trial-text"></span>
+          <button id="btn-trial-keep" class="primary small" type="button">保留并设为新基准</button>
+          <button id="btn-trial-discard" class="ghost small" type="button">还原副本</button>
+        </div>
         <div class="viewport-overlay">
           <div class="legend">
             <span><i class="swatch swatch-a"></i>曲面 A</span>
             <span><i class="swatch swatch-b"></i>曲面 B</span>
-            <span><i class="swatch swatch-seam"></i>接缝</span>
+            <span><i class="swatch swatch-seam"></i>真实接缝</span>
             <span><i class="swatch swatch-comb"></i>间隙梳</span>
+            <span><i class="dot dot-blocked"></i>连接受阻</span>
+            <span><i class="dot dot-exclusive"></i>不可兼得</span>
+            <span><i class="dot dot-costly"></i>代价过高</span>
+            <span><i class="tube tube-healed"></i>消除段</span>
+            <span><i class="tube tube-relieved"></i>缓解段</span>
           </div>
-          <div class="camera-help">左键旋转 · 滚轮缩放 · 右键平移 · 点击曲面选边界</div>
+          <div class="camera-help">左键旋转 · 滚轮缩放 · 右键平移 · 点击曲面选边界 · 点击右侧冲突项可三维定位</div>
         </div>
       </section>
 
@@ -142,6 +170,27 @@
           <h2>接缝连续误差 <span class="subtle">（解析验算）</span></h2>
           <div class="metric-grid" id="metric-grid"></div>
           <p class="hint" id="metric-explainer"></p>
+          <h3 class="subhead">连接 / 连续异常定位</h3>
+          <ul class="cluster-list" id="anomaly-list"></ul>
+        </section>
+
+        <section class="group">
+          <h2>连续性模型实测对比</h2>
+          <div id="rec-box" class="rec-box info">尚未运行路线对比。</div>
+          <div class="dof-list" id="dof-list"></div>
+          <h3 class="subhead">冲突段定位（点击在视窗中聚焦）</h3>
+          <ul class="cluster-list" id="cluster-list">
+            <li class="hint">点击左栏“实测 G1 / C1 路线对比”，将据两次真实求解自动标出不可兼得位置。</li>
+          </ul>
+        </section>
+
+        <section class="group">
+          <h2>锁定边 · 松开预演与副本复检</h2>
+          <div class="edge-list" id="edge-list"></div>
+          <div id="edge-preview-text" class="edge-preview">
+            <p class="hint">选择一根<b>已勾选锁定</b>的边，比较“保持锁定”与“仅松开该边”两次求解：让步箭头为该边控制点真实位移，管道标出被消除 / 缓解的误差折线段。</p>
+          </div>
+          <button id="btn-edge-trial" class="primary" type="button" hidden>在副本上应用松开并重新量测</button>
         </section>
 
         <section class="group">
@@ -186,6 +235,9 @@
           <li>点击“求解拼接”。若无法同时满足位置与切向条件，右栏显示“约束冲突”及原因。</li>
           <li>打开“反射线检查”，观察接缝两侧反射条纹是否连续；若断裂，说明切平面不连续。</li>
           <li>在“接缝连续误差”中核对位置间隙、法线夹角与速度比；这些数值由解析曲面直接验算。</li>
+          <li>用“实测 G1/C1 路线对比”同时求解两条路线；右栏给出推荐、DOF 秩/零空间，以及可点击三维定位的“不可兼得 / 代价过高 / 受阻”冲突段。</li>
+          <li>在“边界锁”勾选 opposite / side0 / side1；到“锁定边 · 松开预演”选择一根已锁边，查看松开它能消除哪段误差折线与控制点让步量。</li>
+          <li>点击“在副本上应用松开并重新量测”，视窗即显示松开后的真实接缝；可用“保留并设为新基准”或“还原副本”。</li>
         </ol>
         <p class="hint">
           提示：G1 只要求切平面一致，两侧参数速度可以不同；因此速度比可能远离 1。C1 会强制速度一致，
